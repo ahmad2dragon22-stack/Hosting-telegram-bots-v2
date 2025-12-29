@@ -44,6 +44,14 @@ def get_setting(key):
     conn.close()
     return res[0] if res else None
 
+def get_bot(bot_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM bots WHERE id=?", (bot_id,))
+    bot = c.fetchone()
+    conn.close()
+    return bot
+
 def set_setting(key, value):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -185,7 +193,11 @@ def file_manager_kb(bot_id, current_path):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT path FROM bots WHERE id=?", (bot_id,))
-    bot_path = c.fetchone()[0]
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 رجوع", callback_data="dashboard")]])
+    bot_path = row[0]
     conn.close()
     
     full_path = os.path.normpath(os.path.join(bot_path, current_path.lstrip("/")))
@@ -220,11 +232,12 @@ def file_manager_kb(bot_id, current_path):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_id = get_setting("admin_id")
     user_id = update.effective_user.id
-    
+
     if admin_id is None:
         set_setting("admin_id", user_id)
-        await update.message.reply_text("✅ تم تفعيل نظام الحماية وتعيينك كمسؤول وحيد.")
-    elif str(admin_id) != str(user_id):
+        admin_id = user_id
+
+    if str(admin_id) != str(user_id):
         return
 
     await update.message.reply_text("👋 أهلاً بك في نظام استضافة البوتات المتطور.\nيمكنك إدارة بوتاتك بالكامل من هنا.", reply_markup=main_menu_kb())
@@ -253,34 +266,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("manage_"):
         bot_id = data.split("_")[1]
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT * FROM bots WHERE id=?", (bot_id,))
-        bot = c.fetchone()
-        conn.close()
-        if not bot: return
+        bot = get_bot(bot_id)
+        if not bot:
+            await query.answer("❌ البوت غير موجود", show_alert=True)
+            return
         text = f"🤖 **البوت:** {bot[1]}\n📅 الرفع: {bot[3]}\n📊 الحالة: {'🟢 يعمل' if bot[4] == 'running' else '🔴 متوقف'}"
         await query.edit_message_text(text, reply_markup=bot_manage_kb(bot_id, bot[4]), parse_mode="Markdown")
 
     elif data.startswith("toggle_"):
         bot_id = data.split("_")[1]
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT status FROM bots WHERE id=?", (bot_id,))
-        status = c.fetchone()[0]
-        conn.close()
-        
+        bot = get_bot(bot_id)
+        if not bot:
+            await query.answer("❌ البوت غير موجود", show_alert=True)
+            return
+
+        status = bot[4]
+
         if status == "running":
             stop_bot_process(bot_id)
         else:
             start_bot_process(bot_id)
-        
+
         # تحديث الواجهة
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT * FROM bots WHERE id=?", (bot_id,))
-        bot = c.fetchone()
-        conn.close()
+        bot = get_bot(bot_id)
         text = f"🤖 **البوت:** {bot[1]}\n📅 الرفع: {bot[3]}\n📊 الحالة: {'🟢 يعمل' if bot[4] == 'running' else '🔴 متوقف'}"
         await query.edit_message_text(text, reply_markup=bot_manage_kb(bot_id, bot[4]), parse_mode="Markdown")
 
@@ -296,9 +304,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("SELECT path FROM bots WHERE id=?", (bot_id,))
-        path = c.fetchone()[0]
+        row = c.fetchone()
+        path = row[0] if row else None
         conn.close()
-        try: shutil.rmtree(path)
+        try:
+            if path:
+                shutil.rmtree(path)
         except: pass
         delete_bot_db(bot_id)
         await query.edit_message_text("🖥️ قائمة البوتات المستضافة حالياً:", reply_markup=dashboard_kb())
@@ -320,7 +331,21 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text("⏳ جاري معالجة الملف...")
     new_file = await context.bot.get_file(doc.file_id)
     download_path = os.path.join(bot_path, doc.file_name)
-    await new_file.download_to_drive(download_path)
+    try:
+        # compatibility: prefer async download_to_drive(), fallback to download()
+        if hasattr(new_file, "download_to_drive"):
+            await new_file.download_to_drive(download_path)
+        else:
+            # some versions provide async download()
+            if hasattr(new_file, "download"):
+                await new_file.download(download_path)
+            else:
+                # last resort: call synchronous download method in thread
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, new_file.download, download_path)
+    except Exception as e:
+        await status_msg.edit_text(f"❌ خطأ في التحميل: {e}")
+        return
     
     if doc.file_name.endswith(".zip"):
         try:
@@ -341,7 +366,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # التشغيل الرئيسي
 # ==========================================
 def main():
-    token = os.getenv("8519726834:AAHbe2DFx-fa299YfkK14YNYAm1kuMXA8Sk")
+    token = os.getenv("BOT_TOKEN")
     if not token:
         print("❌ خطأ: يجب تعيين BOT_TOKEN في متغيرات البيئة.")
         return
