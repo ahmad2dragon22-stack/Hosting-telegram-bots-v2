@@ -366,10 +366,21 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # التشغيل الرئيسي
 # ==========================================
 def main():
-    token = os.getenv("8519726834:AAHbe2DFx-fa299YfkK14YNYAm1kuMXA8Sk")
-    if not token:
-        print("❌ خطأ: يجب تعيين BOT_TOKEN في متغيرات البيئة.")
-        return
+    # تحميل ملف .env تلقائياً إذا كانت مكتبة python-dotenv متاحة
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:
+        pass
+
+    # توكن مضمّن داخل الملف (حسب طلب المستخدم).
+    # ملاحظة أمنيّة: تخزين التوكن داخل الشيفرة غير مستحسن في العادة.
+    token = "8519726834:AAHbe2DFx-fa299YfkK14YNYAm1kuMXA8Sk"
+
+    # إذا كان هناك متغير بيئة محدد، فسيُفضَّل على القيمة المضمّنة.
+    env_token = os.getenv("BOT_TOKEN") or os.getenv("TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+    if env_token:
+        token = env_token
 
     application = Application.builder().token(token).build()
 
