@@ -382,6 +382,27 @@ def main():
     if env_token:
         token = env_token
 
+    # Compatibility patch: some versions of python-telegram-bot raise an
+    # AttributeError when the Updater instance lacks a writable slot for
+    # the mangled attribute `_Updater__polling_cleanup_cb`.
+    # We monkeypatch the Updater class to ensure that slot exists so the
+    # library can set the attribute during initialization.
+    try:
+        from telegram.ext import _updater as _updater_mod
+        OriginalUpdater = getattr(_updater_mod, "Updater", None)
+        if OriginalUpdater is not None:
+            class PatchedUpdater(OriginalUpdater):
+                __slots__ = ("_Updater__polling_cleanup_cb",)
+            _updater_mod.Updater = PatchedUpdater
+            # also replace symbol in outer package if present
+            import telegram.ext as _ext
+            setattr(_ext, "Updater", PatchedUpdater)
+    except Exception:
+        # If monkeypatching fails for any reason, fall back and let
+        # Application.builder() raise the original error; we avoid
+        # crashing while importing.
+        pass
+
     application = Application.builder().token(token).build()
 
     application.add_handler(CommandHandler("start", start))
