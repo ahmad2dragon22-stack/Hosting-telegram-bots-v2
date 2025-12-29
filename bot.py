@@ -366,7 +366,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # التشغيل الرئيسي
 # ==========================================
 def main():
-    token = os.getenv("BOT_TOKEN")
+    token = os.getenv("8519726834:AAHbe2DFx-fa299YfkK14YNYAm1kuMXA8Sk")
     if not token:
         print("❌ خطأ: يجب تعيين BOT_TOKEN في متغيرات البيئة.")
         return
