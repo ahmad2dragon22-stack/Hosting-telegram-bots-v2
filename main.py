@@ -8,8 +8,10 @@ import logging
 import signal
 import subprocess
 import importlib.util
+import threading
 from datetime import datetime
 from pathlib import Path
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from pyrogram import Client, filters, types
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
@@ -18,20 +20,40 @@ from pyrogram.errors import MessageNotModified
 # ========================
 # CONFIGURATION & SECURITY
 # ========================
-# Replace with your actual credentials or set as environment variables
-API_ID = 21576842  # Your API ID
+API_ID = 21576842  
 API_HASH = "11a8869ea6ff51ab87bcf291101a8556"
 BOT_TOKEN = "8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U"
-ADMIN_IDS = [8049455831, 87654321]  # Whitelist of Telegram User IDs
+ADMIN_IDS = [8049455831, 87654321]  
 
 # Constants
 BASE_DIR = Path("hosted_bots")
 BASE_DIR.mkdir(exist_ok=True)
 CONFIG_FILE = "system_config.json"
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# ========================
+# HEALTH CHECK SERVER (FIX)
+# ========================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running and healthy!")
+
+    def log_message(self, format, *args):
+        return 
+
+def run_health_server():
+    """Starts a web server on port 8000 to satisfy hosting health checks."""
+    try:
+        server = HTTPServer(('0.0.0.0', 8000), HealthCheckHandler)
+        logger.info("Health Check server started on port 8000")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Failed to start Health Check server: {e}")
 
 # ========================
 # STATE MANAGEMENT
@@ -61,9 +83,11 @@ class BotManager:
             imports = []
             for line in lines:
                 if line.startswith("import ") or line.startswith("from "):
-                    pkg = line.split()[1].split('.')[0]
-                    if pkg not in sys.modules and pkg not in ["os", "sys", "asyncio", "json", "pathlib", "time", "subprocess"]:
-                        imports.append(pkg)
+                    parts = line.split()
+                    if len(parts) > 1:
+                        pkg = parts[1].split('.')[0]
+                        if pkg not in sys.modules and pkg not in ["os", "sys", "asyncio", "json", "pathlib", "time", "subprocess", "threading", "http"]:
+                            imports.append(pkg)
             
             for pkg in set(imports):
                 try:
@@ -81,7 +105,6 @@ class BotManager:
         main_file = bot_dir / "main.py"
         
         if not main_file.exists():
-            # Fallback to the only .py file if main.py doesn't exist
             py_files = list(bot_dir.glob("*.py"))
             if not py_files: return False
             main_file = py_files[0]
@@ -148,13 +171,10 @@ def file_manager_kb(bot_id, current_path):
     bot_dir = BASE_DIR / bot_id
     full_path = (bot_dir / current_path.strip("/")).resolve()
     
-    # Sandboxing check
     if not str(full_path).startswith(str(bot_dir.resolve())):
         full_path = bot_dir
 
     buttons = []
-    
-    # List Directories first
     try:
         items = os.listdir(full_path)
         for item in sorted(items):
@@ -202,7 +222,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif data == "add_bot":
         await query.edit_message_text("📤 من فضلك أرسل ملف البوت (.py أو .zip):")
-        # Logic for file upload handled in message handler
         
     elif data.startswith("manage_"):
         bot_id = data.split("_")[1]
@@ -228,22 +247,13 @@ async def cb_handler(client: Client, query: CallbackQuery):
         else:
             success = await manager.start_bot_process(bot_id)
             await query.answer("تم تشغيل البوت ▶" if success else "فشل التشغيل ⚠️")
-        await cb_handler(client, query) # Refresh
+        await cb_handler(client, query) 
 
     elif data.startswith("files_"):
         parts = data.split("_")
         bot_id = parts[1]
         path = parts[2]
         await query.edit_message_text(f"📁 مدير الملفات: `{path}`", reply_markup=file_manager_kb(bot_id, path))
-
-    elif data.startswith("logs_"):
-        bot_id = data.split("_")[1]
-        if bot_id in manager.bots:
-            proc = manager.bots[bot_id]["process"]
-            # Simplified: just showing status. Real log streaming requires reading the pipe.
-            await query.answer("سجلات البوت تعمل في الخلفية...", show_alert=True)
-        else:
-            await query.answer("البوت متوقف، لا توجد سجلات حالية.", show_alert=True)
 
     elif data == "system_status":
         total_bots = len(manager.config["active_bots"])
@@ -254,6 +264,16 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 f"🟢 نشط الآن: {running}\n"
                 f"💽 المساحة: {usage.used // (2**30)}GB / {usage.total // (2**30)}GB")
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ رجوع", callback_data="back_main")]]))
+
+    elif data.startswith("delete_confirm_"):
+        bot_id = data.split("_")[2]
+        await manager.stop_bot_process(bot_id)
+        shutil.rmtree(BASE_DIR / bot_id, ignore_errors=True)
+        if bot_id in manager.config["active_bots"]:
+            del manager.config["active_bots"][bot_id]
+        manager.save_config()
+        await query.answer("تم حذف البوت نهائياً")
+        await cb_handler(client, query) # Refresh list
 
 # ========================
 # UPLOAD LOGIC
@@ -277,12 +297,9 @@ async def handle_upload(client: Client, message: Message):
     elif message.document.file_name != "main.py":
         os.rename(file_path, bot_dir / "main.py")
 
-    # Ask for Token
     await status_msg.delete()
     token_msg = await message.reply("🔑 أرسل توكن البوت لتفعيله:", reply_markup=types.ForceReply(selective=True))
     
-    # Store temporary state for token response
-    # In a real app, use a proper state machine
     @manager.app.on_message(filters.reply & filters.user(ADMIN_IDS), group=1)
     async def get_token(c, m: Message):
         if m.reply_to_message.id == token_msg.id:
@@ -300,6 +317,9 @@ async def handle_upload(client: Client, message: Message):
 # RUNTIME
 # ========================
 async def main():
+    # Start Health Server in background thread
+    threading.Thread(target=run_health_server, daemon=True).start()
+    
     logger.info("Starting Master Hosting Bot...")
     await manager.app.start()
     
@@ -308,8 +328,7 @@ async def main():
         logger.info(f"Resuming bot: {bot_id}")
         await manager.start_bot_process(bot_id)
         
-    logger.info("Platform is online.")
-    # Keep running
+    logger.info("Platform is online and Health Check is active on port 8000.")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
