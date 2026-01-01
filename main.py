@@ -8,6 +8,8 @@ import subprocess
 import logging
 import re
 import time
+import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
 from functools import wraps
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -1010,6 +1012,36 @@ async def backups_list_callback(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
+class HealthCheckHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            total_bots = len(BOT_CONFIG)
+            running_bots = sum(1 for config in BOT_CONFIG.values() if config.get('status') == 'running')
+            response = {'status': 'healthy', 'timestamp': datetime.now().isoformat(), 'total_bots': total_bots, 'running_bots': running_bots, 'message': 'Bot Hosting Platform is running'}
+            import json
+            self.wfile.write(json.dumps(response).encode())
+        else:
+            self.send_response(404)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'Not Found')
+    def log_message(self, format, *args):
+        logger.debug(f"Health check: {format % args}")
+
+def run_health_server(port: int = 8000):
+    server_address = ('0.0.0.0', port)
+    httpd = HTTPServer(server_address, HealthCheckHandler)
+    logger.info(f"Health check server started on port {port}")
+    httpd.serve_forever()
+
+def start_health_server(port: int = 8000):
+    health_thread = threading.Thread(target=run_health_server, args=(port,), daemon=True)
+    health_thread.start()
+    logger.info(f"Health server thread started (daemon mode)")
+
 def main() -> None:
     """Start the bot."""
     os.makedirs(BOTS_DIR, exist_ok=True)
@@ -1020,27 +1052,27 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start_command))
     
-    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^MAIN_MENU$"))
-    application.add_handler(CallbackQueryHandler(bot_list_callback, pattern="^BOT_LIST$"))
-    application.add_handler(CallbackQueryHandler(bot_panel_callback, pattern="^BOT_PANEL\|"))
-    application.add_handler(CallbackQueryHandler(system_status_callback, pattern="^SYSTEM_STATUS$"))
-    application.add_handler(CallbackQueryHandler(backups_list_callback, pattern="^BACKUPS_LIST$"))
+    application.add_handler(CallbackQueryHandler(main_menu_callback, pattern=r"^MAIN_MENU$"))
+    application.add_handler(CallbackQueryHandler(bot_list_callback, pattern=r"^BOT_LIST$"))
+    application.add_handler(CallbackQueryHandler(bot_panel_callback, pattern=r"^BOT_PANEL\|"))
+    application.add_handler(CallbackQueryHandler(system_status_callback, pattern=r"^SYSTEM_STATUS$"))
+    application.add_handler(CallbackQueryHandler(backups_list_callback, pattern=r"^BACKUPS_LIST$"))
     
-    application.add_handler(CallbackQueryHandler(handle_bot_action, pattern="^(START_BOT|STOP_BOT|RESTART_BOT)\|"))
-    application.add_handler(CallbackQueryHandler(delete_bot_confirm_callback, pattern="^DELETE_BOT_CONFIRM\|"))
-    application.add_handler(CallbackQueryHandler(delete_bot_callback, pattern="^DELETE_BOT\|"))
-    application.add_handler(CallbackQueryHandler(view_logs_callback, pattern="^VIEW_LOGS\|"))
-    application.add_handler(CallbackQueryHandler(backup_bot_callback, pattern="^BACKUP_BOT\|"))
+    application.add_handler(CallbackQueryHandler(handle_bot_action, pattern=r"^(START_BOT|STOP_BOT|RESTART_BOT)\|"))
+    application.add_handler(CallbackQueryHandler(delete_bot_confirm_callback, pattern=r"^DELETE_BOT_CONFIRM\|"))
+    application.add_handler(CallbackQueryHandler(delete_bot_callback, pattern=r"^DELETE_BOT\|"))
+    application.add_handler(CallbackQueryHandler(view_logs_callback, pattern=r"^VIEW_LOGS\|"))
+    application.add_handler(CallbackQueryHandler(backup_bot_callback, pattern=r"^BACKUP_BOT\|"))
     
-    application.add_handler(CallbackQueryHandler(upload_bot_prompt_callback, pattern="^UPLOAD_BOT$"))
+    application.add_handler(CallbackQueryHandler(upload_bot_prompt_callback, pattern=r"^UPLOAD_BOT$"))
     
-    application.add_handler(CallbackQueryHandler(file_manager_callback, pattern="^FILE_MANAGER\|"))
-    application.add_handler(CallbackQueryHandler(file_actions_callback, pattern="^FILE_ACTIONS\|"))
-    application.add_handler(CallbackQueryHandler(fm_download_callback, pattern="^FM_DOWNLOAD\|"))
-    application.add_handler(CallbackQueryHandler(fm_delete_confirm_callback, pattern="^FM_DELETE_CONFIRM\|"))
-    application.add_handler(CallbackQueryHandler(fm_delete_callback, pattern="^FM_DELETE\|"))
-    application.add_handler(CallbackQueryHandler(fm_upload_prompt_callback, pattern="^FM_UPLOAD_PROMPT\|"))
-    application.add_handler(CallbackQueryHandler(fm_create_dir_prompt_callback, pattern="^FM_CREATE_DIR_PROMPT\|"))
+    application.add_handler(CallbackQueryHandler(file_manager_callback, pattern=r"^FILE_MANAGER\|"))
+    application.add_handler(CallbackQueryHandler(file_actions_callback, pattern=r"^FILE_ACTIONS\|"))
+    application.add_handler(CallbackQueryHandler(fm_download_callback, pattern=r"^FM_DOWNLOAD\|"))
+    application.add_handler(CallbackQueryHandler(fm_delete_confirm_callback, pattern=r"^FM_DELETE_CONFIRM\|"))
+    application.add_handler(CallbackQueryHandler(fm_delete_callback, pattern=r"^FM_DELETE\|"))
+    application.add_handler(CallbackQueryHandler(fm_upload_prompt_callback, pattern=r"^FM_UPLOAD_PROMPT\|"))
+    application.add_handler(CallbackQueryHandler(fm_create_dir_prompt_callback, pattern=r"^FM_CREATE_DIR_PROMPT\|"))
     
     application.add_handler(MessageHandler(filters.Document.ALL & filters.User(ADMIN_ID), handle_bot_file_upload))
     application.add_handler(MessageHandler(filters.TEXT & filters.User(ADMIN_ID), handle_bot_token))
@@ -1048,6 +1080,8 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Document.ALL & filters.User(ADMIN_ID), handle_file_manager_file_input))
     
     logger.info("Starting Advanced Bot Hosting Platform...")
+    start_health_server(port=8000)
+    logger.info("Health server is running on port 8000")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
