@@ -3,6 +3,8 @@ import re
 import shutil
 import logging
 from datetime import datetime
+import tempfile
+import zipfile
 from config import BOTS_DIR, BACKUPS_DIR
 
 logger = logging.getLogger(__name__)
@@ -11,6 +13,26 @@ def find_token_in_files(path: str) -> str | None:
     """Searches for a Telegram bot token pattern in .py files within the given path."""
     TOKEN_PATTERN = re.compile(r'(\d+:[a-zA-Z0-9_-]{20,})')
     
+    # If zip file, extract to temp and scan
+    if os.path.isfile(path) and path.endswith('.zip'):
+        temp_dir = tempfile.mkdtemp(prefix='scan_zip_', dir=os.path.dirname(path) or None)
+        try:
+            with zipfile.ZipFile(path, 'r') as zf:
+                # Prevent zip-slip by validating names
+                for member in zf.namelist():
+                    if member.startswith('/') or '..' in member:
+                        continue
+                zf.extractall(temp_dir)
+            # recurse into extracted dir
+            return find_token_in_files(temp_dir)
+        except Exception as e:
+            logger.warning(f"Failed to scan zip for token {path}: {e}")
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+            return None
+
     if os.path.isfile(path) and path.endswith('.py'):
         files_to_check = [path]
     elif os.path.isdir(path):

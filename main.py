@@ -47,6 +47,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+async def global_error_handler(update: object, context) -> None:
+    """Global error handler for uncaught exceptions in handlers."""
+    try:
+        logger.exception("Unhandled exception in handler", exc_info=context.error)
+    except Exception:
+        logger.exception("Failed to log exception in global_error_handler")
+    try:
+        # notify admin if possible
+        if ADMIN_ID:
+            msg = f"⚠️ حدث خطأ في النظام: {context.error}"
+            await context.bot.send_message(chat_id=ADMIN_ID, text=msg)
+    except Exception:
+        logger.exception("Failed to notify admin about error")
+
 def main() -> None:
     """Start the bot."""
     # التأكد من وجود المجلدات الضرورية
@@ -120,6 +135,9 @@ def main() -> None:
     logger.info("Health server is running on port 8000")
     
     # بدء تشغيل البوت
+    # register global error handler
+    application.add_error_handler(global_error_handler)
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':

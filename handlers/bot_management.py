@@ -7,6 +7,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from config import BOTS_DIR, ADMIN_ID
+import tempfile
+import zipfile
 from database.config_manager import get_config, save_config
 from core.process_manager import get_manager, delete_manager
 from utils.file_utils import get_bot_path, get_bot_size, create_backup, find_token_in_files
@@ -169,17 +171,27 @@ async def handle_bot_file_upload(update: Update, context: ContextTypes.DEFAULT_T
             
         file_id = message.document.file_id
         file_name = message.document.file_name
+        file_size = getattr(message.document, 'file_size', None)
+
+        # Reject overly large uploads early (50 MB limit)
+        if file_size and file_size > 50 * 1024 * 1024:
+            await message.reply_text("❌ الملف كبير جداً. الحد المسموح: 50 ميغابايت.")
+            return
         
         if not (file_name.endswith('.py') or file_name.endswith('.zip')):
             await message.reply_text("❌ صيغة الملف غير مدعومة. يرجى إرسال ملف .py أو .zip.")
             return
             
         new_file = await context.bot.get_file(file_id)
-        temp_path = os.path.join(BOTS_DIR, f"temp_{message.from_user.id}_{file_name}")
+        # save to a safe temporary path
+        safe_name = file_name.replace('/', '_').replace('..', '_')
+        temp_dir = tempfile.mkdtemp(prefix=f'temp_upload_{message.from_user.id}_', dir=BOTS_DIR)
+        temp_path = os.path.join(temp_dir, safe_name)
         await new_file.download_to_drive(custom_path=temp_path)
         
         context.user_data['temp_bot_file'] = temp_path
         context.user_data['bot_name'] = file_name.replace('.py', '').replace('.zip', '')
+        context.user_data['temp_dir'] = temp_dir
         
         found_token = find_token_in_files(temp_path)
         
@@ -257,24 +269,56 @@ async def handle_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             
         bot_root = get_bot_path(bot_id)
         os.makedirs(bot_root, exist_ok=True)
-        
-        # استخراج أو نقل الملفات
+
+        # استخراج أو نقل الملفات بأمان داخل مجلد مؤقت ثم نقلها
+        temp_dir_for_upload = os.path.dirname(temp_path)
+        message_text = ""
+
         if temp_path.endswith('.zip'):
             try:
+                # افحص محتويات الـ zip بدون السماح بالـ zip-slip
                 with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                    zip_ref.extractall(bot_root)
+                    for member in zip_ref.namelist():
+                        if member.startswith('/') or '..' in member:
+                            raise zipfile.BadZipFile("Unsafe zip member")
+                    extract_dir = tempfile.mkdtemp(prefix='extract_', dir=temp_dir_for_upload)
+                    zip_ref.extractall(extract_dir)
+
+                # الآن انقل الملفات المستخرجة إلى bot_root
+                for root, dirs, files in os.walk(extract_dir):
+                    rel = os.path.relpath(root, extract_dir)
+                    target_dir = os.path.join(bot_root, rel) if rel != '.' else bot_root
+                    os.makedirs(target_dir, exist_ok=True)
+                    for f in files:
+                        src = os.path.join(root, f)
+                        dst = os.path.join(target_dir, f)
+                        shutil.move(src, dst)
+
                 message_text = f"✅ تم استخراج ملفات البوت {bot_name} بنجاح."
+                # cleanup extractor dir
+                try:
+                    shutil.rmtree(extract_dir)
+                except Exception:
+                    pass
             except zipfile.BadZipFile:
-                await update.message.reply_text("❌ ملف ZIP تالف. يرجى إرسال ملف صحيح.")
+                await update.message.reply_text("❌ ملف ZIP تالف أو يحتوي أسماء غير آمنة. يرجى إرسال ملف صحيح.")
                 if os.path.exists(bot_root):
                     shutil.rmtree(bot_root)
                 return
+            except Exception as e:
+                logger.exception(f"Error extracting zip for bot {bot_id}: {e}")
+                if os.path.exists(bot_root):
+                    shutil.rmtree(bot_root)
+                await update.message.reply_text(f"❌ فشل معالجة ملف ZIP: {e}")
+                return
         else:
             try:
-                shutil.move(temp_path, os.path.join(bot_root, f"{bot_name}.py"))
+                dst_file = os.path.join(bot_root, f"{bot_name}.py")
+                shutil.move(temp_path, dst_file)
                 message_text = f"✅ تم رفع ملف البوت {bot_name} بنجاح."
             except Exception as e:
-                await update.message.reply_text(f"❌ فشل نقل الملف")
+                logger.exception(f"Error moving uploaded file for bot {bot_id}: {e}")
+                await update.message.reply_text(f"❌ فشل نقل الملف: {e}")
                 if os.path.exists(bot_root):
                     shutil.rmtree(bot_root)
                 return
@@ -291,6 +335,13 @@ async def handle_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         }
         save_config()
         
+        # cleanup temp dir if exists
+        try:
+            tmp = context.user_data.get('temp_dir')
+            if tmp and os.path.exists(tmp):
+                shutil.rmtree(tmp)
+        except Exception:
+            pass
         context.user_data.clear()
         
         # محاولة تشغيل البوت
