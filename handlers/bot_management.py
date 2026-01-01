@@ -430,10 +430,10 @@ async def delete_bot_confirm_callback(update: Update, context: ContextTypes.DEFA
         [InlineKeyboardButton("❌ إلغاء", callback_data=f"BOT_PANEL|{bot_id}")]
     ]
     
-        await query.edit_message_text(
-            text=f"⚠️ تحذير! هل أنت متأكد من حذف البوت {name}؟\nسيتم إيقاف البوت وحذف جميع ملفاته نهائياً.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+    await query.edit_message_text(
+        text=f"⚠️ تحذير! هل أنت متأكد من حذف البوت {name}؟\nسيتم إيقاف البوت وحذف جميع ملفاته نهائياً.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def delete_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Deletes the bot and its files."""
@@ -459,10 +459,10 @@ async def delete_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         delete_manager(bot_id)
         save_config()
         
-            await query.edit_message_text(
-                text=f"🗑 تم حذف البوت {bot_id} وجميع ملفاته بنجاح.",
-                reply_markup=get_main_menu_keyboard()
-            )
+        await query.edit_message_text(
+            text=f"🗑 تم حذف البوت {bot_id} وجميع ملفاته بنجاح.",
+            reply_markup=get_main_menu_keyboard()
+        )
         
     except Exception as e:
         await query.edit_message_text(

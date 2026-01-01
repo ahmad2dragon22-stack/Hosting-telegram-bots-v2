@@ -46,13 +46,11 @@ async def system_status_callback(update: Update, context: ContextTypes.DEFAULT_T
         text=status_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-    )
-
 async def backups_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays the list of available backups."""
     query = update.callback_query
     await query.answer()
-    
+
     if not os.path.exists(BACKUPS_DIR):
         text = "💾 لا توجد نسخ احتياطية حالياً."
     else:
@@ -63,11 +61,11 @@ async def backups_list_callback(update: Update, context: ContextTypes.DEFAULT_TY
             text = "💾 النسخ الاحتياطية المتاحة:\n\n"
             for backup in sorted(backups, reverse=True)[:10]:
                 text += f"📦 {backup}\n"
-    
+
     keyboard = [
         [InlineKeyboardButton("⬅ رجوع", callback_data="MAIN_MENU")]
     ]
-    
+
     await query.edit_message_text(
         text=text,
         reply_markup=InlineKeyboardMarkup(keyboard)
