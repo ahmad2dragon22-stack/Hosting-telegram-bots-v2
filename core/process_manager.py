@@ -32,30 +32,65 @@ class BotProcessManager:
 
         try:
             bot_root = get_bot_path(self.bot_id)
-            main_script = next((f for f in os.listdir(bot_root) if f.endswith('.py')), None)
 
-            if not main_script:
+            # اكتشاف ملف الدخول: تحقق من أسماء شائعة ثم ابحث داخل الملفات عن نقطة الدخول
+            def _find_main_script(root_path: str) -> str | None:
+                candidates = ['main.py', 'bot.py', 'run.py', 'app.py']
+                for name in candidates:
+                    p = os.path.join(root_path, name)
+                    if os.path.isfile(p):
+                        return p
+
+                # ابحث عن ملفات تحتوي على نقطة الدخول أو استخدام تطبيقات بوت
+                for r, _, files in os.walk(root_path):
+                    for f in files:
+                        if not f.endswith('.py'):
+                            continue
+                        fp = os.path.join(r, f)
+                        try:
+                            with open(fp, 'r', encoding='utf-8', errors='ignore') as fh:
+                                content = fh.read()
+                                if '__main__' in content or 'Application.builder' in content or 'Updater' in content:
+                                    return fp
+                        except Exception:
+                            continue
+
+                # أخيراً، أي ملف py في الجذر
+                for f in os.listdir(root_path):
+                    if f.endswith('.py'):
+                        return os.path.join(root_path, f)
+
+                return None
+
+            script_path = _find_main_script(bot_root)
+
+            if not script_path:
                 self.config['status'] = 'error'
                 save_config()
                 return "❌ لم يتم العثور على ملف بايثون رئيسي لتشغيله."
 
-            script_path = os.path.join(bot_root, main_script)
-
             env = os.environ.copy()
             env['BOT_TOKEN'] = self.config.get('token', '')
+            env['PYTHONUNBUFFERED'] = '1'
             # حاول تعطيل الوصول لـ GPU في البوت المستضاف إن لم يكن مطلوباً
             env.setdefault('CUDA_VISIBLE_DEVICES', '')
 
+            # استخدم وضع التشغيل غير المخبأ (-u) لتحسين إخراج السجلات الفوري
+            args = [sys.executable, '-u', script_path]
+
+            # استخدم setsid لبدء مجموعة عمليات جديدة حتى يسهل إيقافها لاحقاً
+            preexec = None if os.name == 'nt' else os.setsid
+
             self.process = await asyncio.create_subprocess_exec(
-                sys.executable, script_path,
+                *args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=bot_root,
                 env=env,
-                preexec_fn=None if os.name == 'nt' else os.setpgrp
+                preexec_fn=preexec
             )
 
-            self.config['status'] = 'running'
+            self.config['status'] = 'starting'
             self.config['pid'] = self.process.pid
             self.start_time = time.time()
             self.config['start_time'] = self.start_time
@@ -66,12 +101,29 @@ class BotProcessManager:
 
             if self.log_task is None:
                 self.log_task = asyncio.create_task(self._capture_logs())
+            if self.log_task is None:
+                self.log_task = asyncio.create_task(self._capture_logs())
             if self.monitor_task is None:
                 self.monitor_task = asyncio.create_task(self._monitor_process())
 
-            return f"✅ تم تشغيل البوت بنجاح. PID: {self.process.pid}"
+            # تحقق قصير متزامن: انتظر لحظة صغيرة للتأكد من أن العملية لم تنهَر فوراً
+            await asyncio.sleep(0.5)
+            if self.process.returncode is not None:
+                # اجمع بعض رسائل الخطأ المبكرة إن وُجدت وأعد الحالة
+                stderr_text = ""
+                try:
+                    stderr = await self.process.stderr.read()
+                    if stderr:
+                        stderr_text = stderr.decode('utf-8', errors='ignore').strip()
+                except Exception:
+                    pass
 
-        except Exception as e:
+                self.config['status'] = 'crashed'
+                self.config['pid'] = None
+                save_config()
+                logger.error(f"Bot {self.bot_id} exited immediately with code {self.process.returncode}. Stderr: {stderr_text}")
+                return f"❌ فشل تشغيل البوت. خرجت العملية فوراً. رسالة الخطأ:
+{stderr_text[:800]}"
             logger.exception(f"Error starting bot {self.bot_id}: {e}")
             self.config['status'] = 'error'
             save_config()

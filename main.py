@@ -9,7 +9,7 @@ from telegram.ext import (
     filters
 )
 
-from config import BOT_TOKEN, ADMIN_ID, BOTS_DIR, BACKUPS_DIR
+from config import BOT_TOKEN, ADMIN_ID, BOTS_DIR, BACKUPS_DIR, USE_WEBHOOK, WEBHOOK_LISTEN, WEBHOOK_PORT, WEBHOOK_PATH, WEBHOOK_URL
 from database.config_manager import load_config
 from core.health_server import start_health_server
 
@@ -138,7 +138,17 @@ def main() -> None:
     # register global error handler
     application.add_error_handler(global_error_handler)
 
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    if USE_WEBHOOK:
+        # إذا لم يُحدد مسار ويب هوك محليًا، استخدم جزء التوكن كمسار افتراضي
+        path = WEBHOOK_PATH or f"/{BOT_TOKEN.split(':')[0]}"
+        if not WEBHOOK_URL:
+            logger.warning("WEBHOOK_URL غير مُحدد؛ سيتم الرجوع إلى Polling بدلاً من Webhook.")
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+        else:
+            logger.info(f"Starting webhook on {WEBHOOK_LISTEN}:{WEBHOOK_PORT}{path} -> {WEBHOOK_URL}")
+            application.run_webhook(listen=WEBHOOK_LISTEN, port=WEBHOOK_PORT, url_path=path, webhook_url=WEBHOOK_URL)
+    else:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()

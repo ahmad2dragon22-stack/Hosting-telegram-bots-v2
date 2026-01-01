@@ -9,6 +9,7 @@ from telegram.ext import ContextTypes
 from config import BOTS_DIR, ADMIN_ID
 import tempfile
 import zipfile
+import asyncio
 from database.config_manager import get_config, save_config
 from core.process_manager import get_manager, delete_manager
 from utils.file_utils import get_bot_path, get_bot_size, create_backup, find_token_in_files
@@ -193,7 +194,8 @@ async def handle_bot_file_upload(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data['bot_name'] = file_name.replace('.py', '').replace('.zip', '')
         context.user_data['temp_dir'] = temp_dir
         
-        found_token = find_token_in_files(temp_path)
+        # فحص التوكن في خيط منفصل لتجنب حجب حلقة الأحداث
+        found_token = await asyncio.to_thread(find_token_in_files, temp_path)
         
         if found_token:
             context.user_data['state'] = 'AWAITING_BOT_TOKEN'
@@ -274,54 +276,53 @@ async def handle_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         temp_dir_for_upload = os.path.dirname(temp_path)
         message_text = ""
 
-        if temp_path.endswith('.zip'):
-            try:
-                # افحص محتويات الـ zip بدون السماح بالـ zip-slip
-                with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                    for member in zip_ref.namelist():
-                        if member.startswith('/') or '..' in member:
-                            raise zipfile.BadZipFile("Unsafe zip member")
-                    extract_dir = tempfile.mkdtemp(prefix='extract_', dir=temp_dir_for_upload)
-                    zip_ref.extractall(extract_dir)
-
-                # الآن انقل الملفات المستخرجة إلى bot_root
-                for root, dirs, files in os.walk(extract_dir):
-                    rel = os.path.relpath(root, extract_dir)
-                    target_dir = os.path.join(bot_root, rel) if rel != '.' else bot_root
-                    os.makedirs(target_dir, exist_ok=True)
-                    for f in files:
-                        src = os.path.join(root, f)
-                        dst = os.path.join(target_dir, f)
-                        shutil.move(src, dst)
-
-                message_text = f"✅ تم استخراج ملفات البوت {bot_name} بنجاح."
-                # cleanup extractor dir
+        # تنفيذ عمليات الملفات الثقيلة في خيط منفصل لتجنب حجب الحلقة
+        def _install_files(src_path: str, dest_root: str, name: str) -> str:
+            # يعالج كل من ملف zip أو ملف py مفرد
+            if src_path.endswith('.zip'):
                 try:
-                    shutil.rmtree(extract_dir)
-                except Exception:
-                    pass
-            except zipfile.BadZipFile:
-                await update.message.reply_text("❌ ملف ZIP تالف أو يحتوي أسماء غير آمنة. يرجى إرسال ملف صحيح.")
-                if os.path.exists(bot_root):
-                    shutil.rmtree(bot_root)
-                return
-            except Exception as e:
-                logger.exception(f"Error extracting zip for bot {bot_id}: {e}")
-                if os.path.exists(bot_root):
-                    shutil.rmtree(bot_root)
-                await update.message.reply_text(f"❌ فشل معالجة ملف ZIP: {e}")
-                return
-        else:
-            try:
-                dst_file = os.path.join(bot_root, f"{bot_name}.py")
-                shutil.move(temp_path, dst_file)
-                message_text = f"✅ تم رفع ملف البوت {bot_name} بنجاح."
-            except Exception as e:
-                logger.exception(f"Error moving uploaded file for bot {bot_id}: {e}")
-                await update.message.reply_text(f"❌ فشل نقل الملف: {e}")
-                if os.path.exists(bot_root):
-                    shutil.rmtree(bot_root)
-                return
+                    with zipfile.ZipFile(src_path, 'r') as zip_ref:
+                        for member in zip_ref.namelist():
+                            if member.startswith('/') or '..' in member:
+                                raise zipfile.BadZipFile('Unsafe zip member')
+                        extract_dir = tempfile.mkdtemp(prefix='extract_', dir=os.path.dirname(src_path))
+                        zip_ref.extractall(extract_dir)
+
+                    for root, dirs, files in os.walk(extract_dir):
+                        rel = os.path.relpath(root, extract_dir)
+                        target_dir = os.path.join(dest_root, rel) if rel != '.' else dest_root
+                        os.makedirs(target_dir, exist_ok=True)
+                        for f in files:
+                            src = os.path.join(root, f)
+                            dst = os.path.join(target_dir, f)
+                            shutil.move(src, dst)
+
+                    try:
+                        shutil.rmtree(extract_dir)
+                    except Exception:
+                        pass
+
+                    return f"✅ تم استخراج ملفات البوت {name} بنجاح."
+                except zipfile.BadZipFile:
+                    raise
+            else:
+                dst_file = os.path.join(dest_root, f"{name}.py")
+                shutil.move(src_path, dst_file)
+                return f"✅ تم رفع ملف البوت {name} بنجاح."
+
+        try:
+            message_text = await asyncio.to_thread(_install_files, temp_path, bot_root, bot_name)
+        except zipfile.BadZipFile:
+            await update.message.reply_text("❌ ملف ZIP تالف أو يحتوي أسماء غير آمنة. يرجى إرسال ملف صحيح.")
+            if os.path.exists(bot_root):
+                shutil.rmtree(bot_root)
+            return
+        except Exception as e:
+            logger.exception(f"Error installing files for bot {bot_id}: {e}")
+            if os.path.exists(bot_root):
+                shutil.rmtree(bot_root)
+            await update.message.reply_text(f"❌ فشل معالجة الملف: {e}")
+            return
 
         # حفظ إعدادات البوت
         BOT_CONFIG[bot_id] = {
@@ -344,12 +345,22 @@ async def handle_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             pass
         context.user_data.clear()
         
-        # محاولة تشغيل البوت
+        # محاولة تشغيل البوت بشكل غير حاجِس لحلقة الأحداث
         try:
             manager = get_manager(bot_id)
-            start_result = await manager.start()
+            start_task = asyncio.create_task(manager.start())
+            # اعطِ عملية البدء فرصة قصيرة لاكتشاف فشل فوري
+            await asyncio.sleep(0.1)
+            if start_task.done():
+                try:
+                    start_result = start_task.result()
+                except Exception as start_err:
+                    logger.error(f"Error starting bot {bot_id}: {start_err}")
+                    start_result = f"⚠️ فشل أثناء تشغيل البوت"
+            else:
+                start_result = "🔁 جاري تشغيل البوت في الخلفية..."
         except Exception as start_err:
-            logger.error(f"Error starting bot {bot_id}: {start_err}")
+            logger.error(f"Error scheduling start for bot {bot_id}: {start_err}")
             start_result = f"⚠️ لم يتم تشغيل البوت تلقائياً"
         
         # إنشاء رسالة بسيطة بدون Markdown لتجنب مشاكل الترميز
