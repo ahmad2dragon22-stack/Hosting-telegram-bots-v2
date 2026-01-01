@@ -26,10 +26,20 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     
-    text = "👋 مرحباً بك في منصة استضافة البوتات المتقدمة (Advanced Bot Hosting Platform).\n\n" \
-           "يرجى اختيار الإجراء:"
+        try:
+            text = "👋 مرحباً بك في منصة استضافة البوتات المتقدمة (Advanced Bot Hosting Platform).\n\n" \
+                   "يرجى اختيار الإجراء:"
            
-    await query.edit_message_text(
-        text=text,
-        reply_markup=get_main_menu_keyboard()
-    )
+            # تنظيف الرسالة من أي أحرف قد تسبب مشاكل
+            text = text.encode('utf-8', errors='ignore').decode('utf-8')
+        
+            await query.edit_message_text(
+                text=text,
+                reply_markup=get_main_menu_keyboard()
+            )
+        except Exception as e:
+            logger.error(f"Error in main_menu_callback: {e}", exc_info=True)
+            try:
+                await query.answer(text="حدث خطأ في تحديث الرسالة", show_alert=True)
+            except:
+                pass

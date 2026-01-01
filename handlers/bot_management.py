@@ -93,8 +93,7 @@ async def bot_panel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await query.edit_message_text(
         text=text,
-        reply_markup=keyboard,
-        parse_mode='Markdown'
+        reply_markup=keyboard
     )
 
 async def handle_bot_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -104,27 +103,39 @@ async def handle_bot_action(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     action, bot_id = query.data.split('|')
     BOT_CONFIG = get_config()
-    
+
     if bot_id not in BOT_CONFIG:
         await query.edit_message_text("❌ البوت غير موجود.")
         return
-        
+
     manager = get_manager(bot_id)
-    
+
     message = ""
-    if action == "START_BOT":
-        message = await manager.start()
-    elif action == "STOP_BOT":
-        message = await manager.stop()
-    elif action == "RESTART_BOT":
-        message = await manager.restart()
-        
+    try:
+        if action == "START_BOT":
+            message = await manager.start()
+        elif action == "STOP_BOT":
+            message = await manager.stop()
+        elif action == "RESTART_BOT":
+            message = await manager.restart()
+    except Exception as e:
+        logger.exception(f"Error handling bot action {action} for {bot_id}: {e}")
+        message = "❌ حدث خطأ أثناء تنفيذ العملية. راجع السجلات."
+
     text, keyboard = get_bot_panel_keyboard(bot_id)
-    await query.edit_message_text(
-        text=f"{text}\n\n--- رسالة النظام ---\n{message}",
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
+    # تأكد من أن النص آمن للإرسال (تجنب تعقيدات Markdown)
+    try:
+        safe_message = str(message)
+        combined_text = f"{text}\n\n--- رسالة النظام ---\n{safe_message}"
+        await query.edit_message_text(
+            text=combined_text,
+            reply_markup=keyboard
+        )
+    except Exception:
+        try:
+            await query.edit_message_text(text=text, reply_markup=keyboard)
+        except Exception:
+            pass
 
 async def upload_bot_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Prompts the user to upload a file and set the state."""
@@ -148,98 +159,127 @@ async def handle_bot_file_upload(update: Update, context: ContextTypes.DEFAULT_T
     """Handles the uploaded file and checks for token automatically."""
     if context.user_data.get('state') != 'AWAITING_BOT_FILE':
         return
+    
+    try:    
+        message = update.message
         
-    message = update.message
-    
-    if not message.document:
-        await message.reply_text("❌ يرجى إرسال ملف (py. أو zip.) وليس نصاً.")
-        return
+        if not message.document:
+            await message.reply_text("❌ يرجى إرسال ملف (py. أو zip.) وليس نصاً.")
+            return
+            
+        file_id = message.document.file_id
+        file_name = message.document.file_name
         
-    file_id = message.document.file_id
-    file_name = message.document.file_name
-    
-    if not (file_name.endswith('.py') or file_name.endswith('.zip')):
-        await message.reply_text("❌ صيغة الملف غير مدعومة. يرجى إرسال ملف .py أو .zip.")
-        return
+        if not (file_name.endswith('.py') or file_name.endswith('.zip')):
+            await message.reply_text("❌ صيغة الملف غير مدعومة. يرجى إرسال ملف .py أو .zip.")
+            return
+            
+        new_file = await context.bot.get_file(file_id)
+        temp_path = os.path.join(BOTS_DIR, f"temp_{message.from_user.id}_{file_name}")
+        await new_file.download_to_drive(custom_path=temp_path)
         
-    new_file = await context.bot.get_file(file_id)
-    temp_path = os.path.join(BOTS_DIR, f"temp_{message.from_user.id}_{file_name}")
-    await new_file.download_to_drive(custom_path=temp_path)
-    
-    context.user_data['temp_bot_file'] = temp_path
-    context.user_data['bot_name'] = file_name.replace('.py', '').replace('.zip', '')
-    
-    found_token = find_token_in_files(temp_path)
-    
-    if found_token:
-        context.user_data['state'] = 'AWAITING_BOT_TOKEN'
-        context.user_data['found_token'] = found_token
+        context.user_data['temp_bot_file'] = temp_path
+        context.user_data['bot_name'] = file_name.replace('.py', '').replace('.zip', '')
         
-        await message.reply_text(
-            f"✅ تم استقبال الملف: **{file_name}**\n"
-            f"✅ تم العثور على التوكن تلقائياً في الملفات!\n\n"
-            f"التوكن المكتشف: `{found_token[:10]}...`\n\n"
-            f"اختر:\n"
-            f"1️⃣ أرسل 'نعم' أو 'yes' لاستخدام التوكن المكتشف\n"
-            f"2️⃣ أرسل توكن مختلف إذا أردت تغييره",
-            parse_mode='Markdown'
-        )
-    else:
-        context.user_data['state'] = 'AWAITING_BOT_TOKEN'
-        await message.reply_text(
-            f"✅ تم استقبال الملف: **{file_name}**\n\n"
-            "❌ لم يتم العثور على توكن في الملفات.\n"
-            "يرجى إرسال **توكن (Token)** البوت الجديد يدوياً.\n"
-            "ملاحظة: التوكن لن يظهر في سجلات الدردشة.",
-            parse_mode='Markdown'
-        )
+        found_token = find_token_in_files(temp_path)
+        
+        if found_token:
+            context.user_data['state'] = 'AWAITING_BOT_TOKEN'
+            context.user_data['found_token'] = found_token
+            
+            reply_text = (
+                f"✅ تم استقبال الملف: {file_name}\n"
+                f"✅ تم العثور على التوكن تلقائياً\n\n"
+                f"اختر:\n"
+                f"1️⃣ أرسل 'نعم' أو 'yes' لاستخدام التوكن المكتشف\n"
+                f"2️⃣ أرسل توكن مختلف إذا أردت تغييره"
+            )
+            await message.reply_text(reply_text)
+        else:
+            context.user_data['state'] = 'AWAITING_BOT_TOKEN'
+            reply_text = (
+                f"✅ تم استقبال الملف: {file_name}\n\n"
+                "❌ لم يتم العثور على توكن في الملفات.\n"
+                "يرجى إرسال توكن (Token) البوت الجديد يدوياً.\n"
+                "ملاحظة: التوكن لن يظهر في سجلات الدردشة."
+            )
+            await message.reply_text(reply_text)
+    except Exception as e:
+        logger.error(f"Error in handle_bot_file_upload: {e}", exc_info=True)
+        try:
+            await message.reply_text(f"❌ حدث خطأ: تواصل مع المسؤول")
+        except:
+            pass
 
 async def handle_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the bot token and finalizes deployment."""
     if context.user_data.get('state') != 'AWAITING_BOT_TOKEN':
         return
-        
-    user_input = update.message.text.strip().lower()
-    temp_path = context.user_data.get('temp_bot_file')
-    bot_name = context.user_data.get('bot_name')
-    found_token = context.user_data.get('found_token')
-    
-    if not temp_path:
-        await update.message.reply_text("❌ حدث خطأ في عملية الرفع. يرجى البدء من جديد.", reply_markup=get_main_menu_keyboard())
-        context.user_data.clear()
-        return
-    
-    if found_token and user_input in ['نعم', 'yes', 'y', 'ن']:
-        token = found_token
-    else:
-        token = user_input
-    
-    if not (token.split(':')[0].isdigit() and ':' in token and len(token.split(':')[-1]) > 10):
-        await update.message.reply_text("❌ التوكن المدخل لا يبدو صحيحاً. يرجى إرسال التوكن الصحيح.")
-        return
-        
-    bot_id = token.split(':')[0]
-    BOT_CONFIG = get_config()
-    
-    if bot_id in BOT_CONFIG:
-        await update.message.reply_text(f"❌ البوت بهذا التوكن ({bot_id}) موجود بالفعل. يرجى استخدام توكن آخر أو حذف البوت الحالي.", reply_markup=get_main_menu_keyboard())
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        context.user_data.clear()
-        return
-        
-    bot_root = get_bot_path(bot_id)
-    os.makedirs(bot_root, exist_ok=True)
     
     try:
-        if temp_path.endswith('.zip'):
-            with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                zip_ref.extractall(bot_root)
-            message_text = f"✅ تم استخراج ملفات البوت **{bot_name}** بنجاح."
+        user_input = update.message.text.strip().lower()
+        temp_path = context.user_data.get('temp_bot_file')
+        bot_name = context.user_data.get('bot_name')
+        found_token = context.user_data.get('found_token')
+        
+        if not temp_path:
+            await update.message.reply_text("❌ حدث خطأ في عملية الرفع. يرجى البدء من جديد.", reply_markup=get_main_menu_keyboard())
+            context.user_data.clear()
+            return
+        
+        if found_token and user_input in ['نعم', 'yes', 'y', 'ن']:
+            token = found_token
         else:
-            shutil.move(temp_path, os.path.join(bot_root, f"{bot_name}.py"))
-            message_text = f"✅ تم رفع ملف البوت **{bot_name}** بنجاح."
+            token = user_input
+        
+        # التحقق من صيغة التوكن
+        try:
+            parts = token.split(':')
+            if not (len(parts) == 2 and parts[0].isdigit() and len(parts[1]) > 10):
+                await update.message.reply_text("❌ التوكن المدخل لا يبدو صحيحاً. يرجى إرسال التوكن الصحيح.")
+                return
+        except (ValueError, AttributeError, IndexError):
+            await update.message.reply_text("❌ التوكن المدخل لا يبدو صحيحاً. يرجى إرسال التوكن الصحيح.")
+            return
             
+        bot_id = token.split(':')[0]
+        BOT_CONFIG = get_config()
+        
+        if bot_id in BOT_CONFIG:
+            await update.message.reply_text("❌ البوت بهذا التوكن موجود بالفعل. يرجى استخدام توكن آخر", reply_markup=get_main_menu_keyboard())
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+            context.user_data.clear()
+            return
+            
+        bot_root = get_bot_path(bot_id)
+        os.makedirs(bot_root, exist_ok=True)
+        
+        # استخراج أو نقل الملفات
+        if temp_path.endswith('.zip'):
+            try:
+                with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                    zip_ref.extractall(bot_root)
+                message_text = f"✅ تم استخراج ملفات البوت {bot_name} بنجاح."
+            except zipfile.BadZipFile:
+                await update.message.reply_text("❌ ملف ZIP تالف. يرجى إرسال ملف صحيح.")
+                if os.path.exists(bot_root):
+                    shutil.rmtree(bot_root)
+                return
+        else:
+            try:
+                shutil.move(temp_path, os.path.join(bot_root, f"{bot_name}.py"))
+                message_text = f"✅ تم رفع ملف البوت {bot_name} بنجاح."
+            except Exception as e:
+                await update.message.reply_text(f"❌ فشل نقل الملف")
+                if os.path.exists(bot_root):
+                    shutil.rmtree(bot_root)
+                return
+
+        # حفظ إعدادات البوت
         BOT_CONFIG[bot_id] = {
             'name': bot_name,
             'token': token,
@@ -253,24 +293,51 @@ async def handle_bot_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         
         context.user_data.clear()
         
-        manager = get_manager(bot_id)
-        start_result = await manager.start()
+        # محاولة تشغيل البوت
+        try:
+            manager = get_manager(bot_id)
+            start_result = await manager.start()
+        except Exception as start_err:
+            logger.error(f"Error starting bot {bot_id}: {start_err}")
+            start_result = f"⚠️ لم يتم تشغيل البوت تلقائياً"
         
-        text, keyboard = get_bot_panel_keyboard(bot_id)
-        await update.message.reply_text(
-            text=f"{message_text}\n\n{text}\n\n--- رسالة النظام ---\n{start_result}",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
+        # إنشاء رسالة بسيطة بدون Markdown لتجنب مشاكل الترميز
+        try:
+            text, keyboard = get_bot_panel_keyboard(bot_id)
+            combined_text = f"{message_text}\n\n{text}\n\n{start_result}"
+            combined_text = combined_text.encode('utf-8', errors='ignore').decode('utf-8')
+            await update.message.reply_text(
+                text=combined_text,
+                reply_markup=keyboard
+            )
+        except Exception as reply_err:
+            logger.error(f"Error sending reply: {reply_err}")
+            try:
+                await update.message.reply_text(
+                    f"{message_text}\n\n✅ تم نشر البوت بنجاح",
+                    reply_markup=get_main_menu_keyboard()
+                )
+            except:
+                pass
         
     except Exception as e:
-        logger.error(f"Deployment error for bot {bot_id}: {e}")
-        if os.path.exists(bot_root):
-            shutil.rmtree(bot_root)
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-            
-        await update.message.reply_text(f"❌ فشل نشر البوت: {e}", reply_markup=get_main_menu_keyboard())
+        logger.error(f"Deployment error: {e}", exc_info=True)
+        try:
+            if 'bot_root' in locals() and os.path.exists(bot_root):
+                shutil.rmtree(bot_root)
+        except:
+            pass
+        try:
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
+        except:
+            pass
+        
+        try:
+            await update.message.reply_text(f"❌ فشل نشر البوت", reply_markup=get_main_menu_keyboard())
+        except:
+            pass
+        
         context.user_data.clear()
 
 async def backup_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -288,11 +355,10 @@ async def backup_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     backup_path = create_backup(bot_id)
     
     if backup_path:
-        await query.edit_message_text(
-            text=f"✅ تم إنشاء نسخة احتياطية بنجاح.\nالمسار: `{backup_path}`",
-            reply_markup=get_bot_list_keyboard(),
-            parse_mode='Markdown'
-        )
+            await query.edit_message_text(
+                text=f"✅ تم إنشاء نسخة احتياطية بنجاح.\nالمسار: {backup_path}",
+                reply_markup=get_bot_list_keyboard()
+            )
     else:
         await query.edit_message_text(
             text="❌ فشل إنشاء النسخة الاحتياطية.",
@@ -313,12 +379,10 @@ async def delete_bot_confirm_callback(update: Update, context: ContextTypes.DEFA
         [InlineKeyboardButton("❌ إلغاء", callback_data=f"BOT_PANEL|{bot_id}")]
     ]
     
-    await query.edit_message_text(
-        text=f"⚠️ **تحذير!** هل أنت متأكد من حذف البوت **{name}**؟\n"
-             "سيتم إيقاف البوت وحذف جميع ملفاته نهائياً.",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
-    )
+        await query.edit_message_text(
+            text=f"⚠️ تحذير! هل أنت متأكد من حذف البوت {name}؟\nسيتم إيقاف البوت وحذف جميع ملفاته نهائياً.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
 async def delete_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Deletes the bot and its files."""
@@ -344,11 +408,10 @@ async def delete_bot_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         delete_manager(bot_id)
         save_config()
         
-        await query.edit_message_text(
-            text=f"🗑 تم حذف البوت **{bot_id}** وجميع ملفاته بنجاح.",
-            reply_markup=get_main_menu_keyboard(),
-            parse_mode='Markdown'
-        )
+            await query.edit_message_text(
+                text=f"🗑 تم حذف البوت {bot_id} وجميع ملفاته بنجاح.",
+                reply_markup=get_main_menu_keyboard()
+            )
         
     except Exception as e:
         await query.edit_message_text(
@@ -374,8 +437,7 @@ async def view_logs_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not logs:
         logs = "لا توجد سجلات حالياً."
         
-    text = f"📄 سجلات البوت **{BOT_CONFIG[bot_id].get('name', bot_id)}** (آخر 50 سطر):\n\n" \
-           f"```\n{logs}\n```"
+    text = f"📄 سجلات البوت {BOT_CONFIG[bot_id].get('name', bot_id)} (آخر 50 سطر):\n\n{logs}"
            
     keyboard = [
         [InlineKeyboardButton("🔄 تحديث السجلات", callback_data=f"VIEW_LOGS|{bot_id}")],
@@ -384,6 +446,5 @@ async def view_logs_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await query.edit_message_text(
         text=text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )

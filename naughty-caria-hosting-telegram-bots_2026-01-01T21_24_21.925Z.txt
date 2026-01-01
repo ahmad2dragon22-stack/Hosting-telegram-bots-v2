@@ -1,0 +1,100 @@
+2026-01-01 21:22:13,942 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:14,036 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getFile "HTTP/1.1 200 OK"
+2026-01-01 21:22:14,057 - httpx - INFO - HTTP Request: GET https://api.telegram.org/file/bot8004754960%3AAAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/documents/file_5.py "HTTP/1.1 200 OK"
+2026-01-01 21:22:14,073 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/sendMessage "HTTP/1.1 400 Bad Request"
+2026-01-01 21:22:14,074 - telegram.ext.Application - ERROR - No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/ext/_application.py", line 1315, in process_update
+    await coroutine
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/ext/_handlers/basehandler.py", line 159, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/handlers/bot_management.py", line 178, in handle_bot_file_upload
+    await message.reply_text(
+    ...<7 lines>...
+    )
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/_message.py", line 2060, in reply_text
+    return await self.get_bot().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<21 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/ext/_extbot.py", line 3107, in send_message
+    return await super().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<23 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/_bot.py", line 1118, in send_message
+    return await self._send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<21 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/ext/_extbot.py", line 634, in _send_message
+    result = await super()._send_message(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<23 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/_bot.py", line 819, in _send_message
+    result = await self._post(
+             ^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/_bot.py", line 703, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/ext/_extbot.py", line 372, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/_bot.py", line 732, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/request/_baserequest.py", line 198, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "/workspace/.heroku/python/lib/python3.13/site-packages/telegram/request/_baserequest.py", line 375, in _request_wrapper
+    raise exception
+telegram.error.BadRequest: Can't parse entities: can't find end of the entity starting at byte offset 43
+2026-01-01 21:22:23,966 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:33,985 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:40,389 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:45,504 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:45,589 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-01-01 21:22:45,673 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/editMessageText "HTTP/1.1 200 OK"
+2026-01-01 21:22:46,824 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:46,874 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-01-01 21:22:46,931 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/editMessageText "HTTP/1.1 200 OK"
+2026-01-01 21:22:47,646 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:47,680 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-01-01 21:22:47,751 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/editMessageText "HTTP/1.1 200 OK"
+2026-01-01 21:22:48,950 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:22:48,974 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/answerCallbackQuery "HTTP/1.1 200 OK"
+2026-01-01 21:22:49,014 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/editMessageText "HTTP/1.1 200 OK"
+2026-01-01 21:22:58,968 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:23:08,986 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:23:12,911 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:23:13,079 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getFile "HTTP/1.1 200 OK"
+2026-01-01 21:23:13,097 - httpx - INFO - HTTP Request: GET https://api.telegram.org/file/bot8004754960%3AAAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/documents/file_6.py "HTTP/1.1 200 OK"
+2026-01-01 21:23:13,148 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/sendMessage "HTTP/1.1 200 OK"
+2026-01-01 21:23:22,930 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:23:27,589 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 21:23:27,591 - database.config_manager - INFO - Bot configuration saved.
+2026-01-01 21:23:27,594 - database.config_manager - INFO - Bot configuration saved.
+2026-01-01 21:23:27,697 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/sendMessage "HTTP/1.1 400 Bad Request"
+2026-01-01 21:23:27,698 - handlers.bot_management - ERROR - Deployment error for bot 8519726834: Can't parse entities: can't find end of the entity starting at byte offset 158
+2026-01-01 21:23:27,797 - httpx - INFO - HTTP Request: POST https://api.telegram.org/bot8004754960:AAE_jGAX52F_vh7NwxI6nha94rngL6umy3U/sendMessage "HTTP/1.1 200 OK"

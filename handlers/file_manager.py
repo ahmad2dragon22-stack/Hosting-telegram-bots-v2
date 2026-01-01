@@ -75,8 +75,7 @@ async def file_manager_callback(update: Update, context: ContextTypes.DEFAULT_TY
         text, keyboard = get_file_manager_keyboard(bot_id, current_path)
         await query.edit_message_text(
             text=text,
-            reply_markup=keyboard,
-            parse_mode='Markdown'
+            reply_markup=keyboard
         )
     except Exception as e:
         logger.error(f"File manager error: {e}")
@@ -101,9 +100,8 @@ async def file_actions_callback(update: Update, context: ContextTypes.DEFAULT_TY
     ]
     
     await query.edit_message_text(
-        text=f"📄 خيارات الملف: `{file_path}`",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        text=f"📄 خيارات الملف: {file_path}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def fm_download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -121,7 +119,7 @@ async def fm_download_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_document(
             chat_id=query.message.chat_id,
             document=abs_path,
-            caption=f"⬇️ ملف البوت: `{file_path}`"
+            caption=f"⬇️ ملف البوت: {file_path}"
         )
         await file_actions_callback(update, context)
         
@@ -148,10 +146,8 @@ async def fm_delete_confirm_callback(update: Update, context: ContextTypes.DEFAU
     item_type = "المجلد" if is_dir else "الملف"
     
     await query.edit_message_text(
-        text=f"⚠️ **تحذير!** هل أنت متأكد من حذف {item_type} **{item_path}**؟\n"
-             "سيتم حذف المحتوى نهائياً.",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        text=f"⚠️ تحذير! هل أنت متأكد من حذف {item_type} {item_path}?\nسيتم حذف المحتوى نهائياً.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def fm_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -177,7 +173,7 @@ async def fm_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Manually updating query data to navigate back
         query.data = f"FILE_MANAGER|{bot_id}|{parent_path}"
         await file_manager_callback(update, context)
-        await query.message.reply_text(message, parse_mode='Markdown')
+        await query.message.reply_text(message)
         
     except Exception as e:
         await query.edit_message_text(f"❌ فشل حذف الملف/المجلد: {e}")
@@ -200,9 +196,8 @@ async def fm_upload_prompt_callback(update: Update, context: ContextTypes.DEFAUL
     ]
     
     await query.edit_message_text(
-        text=f"📤 يرجى إرسال الملف الذي تريد رفعه إلى المسار:\n`{current_path}`",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        text=f"📤 يرجى إرسال الملف الذي تريد رفعه إلى المسار:\n{current_path}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def fm_create_dir_prompt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -223,9 +218,8 @@ async def fm_create_dir_prompt_callback(update: Update, context: ContextTypes.DE
     ]
     
     await query.edit_message_text(
-        text=f"📂 يرجى إرسال اسم المجلد الجديد الذي تريد إنشاءه في المسار:\n`{current_path}`",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        text=f"📂 يرجى إرسال اسم المجلد الجديد الذي تريد إنشاءه في المسار:\n{current_path}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def handle_file_manager_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -251,14 +245,14 @@ async def handle_file_manager_text_input(update: Update, context: ContextTypes.D
         abs_path = get_bot_path(bot_id, os.path.join(current_path, dir_name))
         os.makedirs(abs_path, exist_ok=True)
         
-        await update.message.reply_text(f"✅ تم إنشاء المجلد **{dir_name}** بنجاح.", parse_mode='Markdown')
+        await update.message.reply_text(f"✅ تم إنشاء المجلد {dir_name} بنجاح.")
         
         # Simulating callback to refresh FM
         context.user_data.clear()
         
         # Using a dummy query to refresh the interface
         text, keyboard = get_file_manager_keyboard(bot_id, current_path)
-        await update.message.reply_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
+        await update.message.reply_text(text=text, reply_markup=keyboard)
         
     except Exception as e:
         await update.message.reply_text(f"❌ فشل إنشاء المجلد: {e}")
@@ -286,13 +280,13 @@ async def handle_file_manager_file_input(update: Update, context: ContextTypes.D
         target_path = get_bot_path(bot_id, os.path.join(current_path, file_name))
         await new_file.download_to_drive(custom_path=target_path)
         
-        await message.reply_text(f"✅ تم رفع الملف **{file_name}** بنجاح إلى المسار:\n`{current_path}`", parse_mode='Markdown')
+        await message.reply_text(f"✅ تم رفع الملف {file_name} بنجاح إلى المسار:\n{current_path}")
         
         context.user_data.clear()
         
         # Refresh interface
         text, keyboard = get_file_manager_keyboard(bot_id, current_path)
-        await message.reply_text(text=text, reply_markup=keyboard, parse_mode='Markdown')
+        await message.reply_text(text=text, reply_markup=keyboard)
         
     except Exception as e:
         await message.reply_text(f"❌ فشل رفع الملف: {e}")

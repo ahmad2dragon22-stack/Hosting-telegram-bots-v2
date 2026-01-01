@@ -45,7 +45,7 @@ async def system_status_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(
         text=status_text,
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+    )
     )
 
 async def backups_list_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
